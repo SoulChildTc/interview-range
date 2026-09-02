@@ -198,7 +198,14 @@ def add_direction(name, keyword, desc=""):
     """
     migrate_if_needed()
     if not QUESTIONS_META.exists():
-        raise RuntimeError(f"题库元数据不存在: {QUESTIONS_META}")
+        # 空库自动初始化：创建题库目录与空元数据，保证 clone 后首次新建方向可直接使用
+        QUESTIONS_DIR.mkdir(parents=True, exist_ok=True)
+        QUESTIONS_META.write_text(
+            json.dumps({"meta": {"created": time.strftime("%Y-%m-%d")}, "directions": []},
+                       ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        log_info("初始化空题库元数据 %s", QUESTIONS_META)
     meta = json.loads(QUESTIONS_META.read_text(encoding="utf-8"))
     directions = meta.get("directions", [])
     name = (name or "").strip()
