@@ -184,40 +184,54 @@ async function runFind() {
   const status = document.getElementById('find-status');
   btn.disabled = true;
   btn.textContent = '搜索中…';
-  status.textContent = `正在联网搜索真实面经并让 AI 提炼（${findDirs.length} 个方向，约 20-60 秒/方向）…`;
+  const dirName = id => (state.data?.directions.find(dd => dd.id === id) || {}).name || id;
+  let doneCnt = 0, totalFound = 0;
   try {
-    const r = await apiPost('/api/find-questions', { directions: findDirs, count: findCount });
-    findCands = r.candidates || [];
-    const box = document.getElementById('find-results');
-    status.textContent = r.message || '';
-    if (!findCands.length) {
-      box.innerHTML = '<div class="empty" style="padding:20px">没有提炼出新题（可能都已在题库或搜索失败）</div>';
-      document.getElementById('find-actions').style.display = 'none';
-      return;
-    }
-    box.innerHTML = findCands.map((c, i) => {
-      const q = c.question || '';
-      const ans = (c.answer || []).join('；');
-      const dname = (state.data?.directions.find(dd => dd.id === c.direction) || {}).name;
-      const meta = [
-        c.importance ? `<span class="badge ${c.importance === '高频' ? 'high' : 'mid'}">${esc(c.importance)}</span>` : '',
-        c.difficulty ? `<span class="badge ${esc(c.difficulty)}">${esc(c.difficulty)}</span>` : '',
-        c.topic ? `<span class="badge" style="color:var(--accent2);background:var(--accent2-soft);border-color:transparent">${esc(c.topic)}</span>` : '',
-        dname ? `<span class="badge fdir-badge">${esc(dname)}</span>` : '',
-      ].join('');
-      return `<div class="find-item">
-        <label class="f-head">
-          <input type="checkbox" data-i="${i}" checked onchange="updateImportBtn()">
-          <div class="f-body">
-            <div class="f-meta">${meta}</div>
-            <div class="f-q">${esc(q)}</div>
-            ${ans ? `<div class="f-ans"><b>要点：</b>${esc(ans)}</div>` : ''}
-          </div>
-        </label>
-      </div>`;
-    }).join('');
-    document.getElementById('find-actions').style.display = 'flex';
-    updateImportBtn();
+    await apiStream('/api/find-questions', { directions: findDirs, count: findCount }, (ev, p) => {
+      if (ev === 'progress') {
+        if (p.stage === 'start') {
+          status.textContent = `正在搜索 ${p.index}/${p.total}「${p.dir_name}」…`;
+        } else if (p.stage === 'done') {
+          doneCnt++; totalFound += (p.found || 0);
+          status.textContent = `已完成 ${doneCnt}/${p.total} 个方向，已找到 ${totalFound} 条候选…`;
+        } else if (p.stage === 'error') {
+          doneCnt++;
+          status.textContent = `「${p.dir_name}」搜索失败（${p.message || 'anysearch 不可用'}），继续下一个…`;
+        }
+      } else if (ev === 'done') {
+        findCands = p.candidates || [];
+        status.textContent = p.message || '';
+        const box = document.getElementById('find-results');
+        if (!findCands.length) {
+          box.innerHTML = '<div class="empty" style="padding:20px">没有提炼出新题（可能都已在题库或搜索失败）</div>';
+          document.getElementById('find-actions').style.display = 'none';
+          return;
+        }
+        box.innerHTML = findCands.map((c, i) => {
+          const q = c.question || '';
+          const ans = (c.answer || []).join('；');
+          const dname = dirName(c.direction);
+          const meta = [
+            c.importance ? `<span class="badge ${c.importance === '高频' ? 'high' : 'mid'}">${esc(c.importance)}</span>` : '',
+            c.difficulty ? `<span class="badge ${esc(c.difficulty)}">${esc(c.difficulty)}</span>` : '',
+            c.topic ? `<span class="badge" style="color:var(--accent2);background:var(--accent2-soft);border-color:transparent">${esc(c.topic)}</span>` : '',
+            dname ? `<span class="badge fdir-badge">${esc(dname)}</span>` : '',
+          ].join('');
+          return `<div class="find-item">
+            <label class="f-head">
+              <input type="checkbox" data-i="${i}" checked onchange="updateImportBtn()">
+              <div class="f-body">
+                <div class="f-meta">${meta}</div>
+                <div class="f-q">${esc(q)}</div>
+                ${ans ? `<div class="f-ans"><b>要点：</b>${esc(ans)}</div>` : ''}
+              </div>
+            </label>
+          </div>`;
+        }).join('');
+        document.getElementById('find-actions').style.display = 'flex';
+        updateImportBtn();
+      }
+    });
   } catch (e) {
     status.textContent = '搜索失败：' + e.message;
     toast('搜索失败：' + e.message);

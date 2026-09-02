@@ -1269,7 +1269,7 @@ class Handler(BaseHTTPRequestHandler):
         }})
 
     def _handle_find_questions(self, body):
-        """联网搜真题 -> AI 提炼 -> 返回候选列表（支持多方向，每题标注来源方向）。"""
+        """联网搜真题 -> AI 提炼 -> 返回候选列表（SSE 流式推送进度，支持多方向）。"""
         valid_ids = [d["id"] for d in get_directions()]
         raw = body.get("directions") or (body.get("direction") if body.get("direction") else None)
         if isinstance(raw, str):
@@ -1282,12 +1282,20 @@ class Handler(BaseHTTPRequestHandler):
             return
         count = int(body.get("count", 5))
         count = max(1, min(10, count))
+        self._sse_start()
         all_items, seen = [], set()
-        for d in dirs:
+        name_of = {d["id"]: d["name"] for d in get_directions()}
+        total = len(dirs)
+        for i, d in enumerate(dirs):
+            dname = name_of.get(d, d)
+            self._sse("progress", {"stage": "start", "total": total, "index": i + 1, "dir": d, "dir_name": dname})
             try:
                 items = ai_find_questions(d, count)
             except RuntimeError as e:
+                self._sse("progress", {"stage": "error", "done": i + 1, "total": total, "dir": d,
+                                       "dir_name": dname, "message": str(e)})
                 continue
+            accepted = []
             for it in items:
                 qk = it.get("question", "")[:40]
                 if not qk or qk in seen:
@@ -1295,10 +1303,13 @@ class Handler(BaseHTTPRequestHandler):
                 seen.add(qk)
                 it["direction"] = d
                 all_items.append(it)
+                accepted.append(it)
+            self._sse("progress", {"stage": "done", "done": i + 1, "total": total, "dir": d,
+                                   "dir_name": dname, "items": accepted})
         if not all_items:
-            self._send(200, {"candidates": [], "message": "没有提炼出新题（可能搜索到的题都已有或搜索失败）"})
+            self._sse("done", {"candidates": [], "message": "没有提炼出新题（可能搜索到的题都已有或搜索失败）"})
             return
-        self._send(200, {"candidates": all_items, "message": f"联网找到 {len(all_items)} 道候选新题"})
+        self._sse("done", {"candidates": all_items, "message": f"联网找到 {len(all_items)} 道候选新题"})
 
     def _handle_import_questions(self, body):
         """把前端确认的题写入题库。body: {direction, questions: [...]}"""
