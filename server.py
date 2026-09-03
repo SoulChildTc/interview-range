@@ -34,13 +34,14 @@ import store
 from store import (
     get_logger, log_info, log_warn, log_error,
     get_questions, get_directions, find_question, questions_by_direction,
-    append_questions, reload_questions, add_direction, delete_direction,
+    append_questions, reload_questions, add_direction, delete_direction, delete_question,
     restore_direction, purge_direction, purge_all_trash, get_trash,
     reorder_directions,
     load_history_index, load_session, save_session, delete_session,
     load_state, toggle_mastered, toggle_bookmark, set_last_direction, set_mix_exclude,
     get_question_by_id, get_followup_session, append_followup_message,
     remove_last_followup_message, reset_followup_session,
+    load_notes, save_note,
 )
 
 # ---------------------------------------------------------------- 路径与配置
@@ -1048,6 +1049,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, get_followup_session(qid, topic))
         elif route == "/api/state":
             self._send(200, load_state())
+        elif route == "/api/notes":
+            self._send(200, {"notes": load_notes()})
         elif route == "/api/session/live":
             live = []
             for sid, s in SESSIONS.items():
@@ -1108,6 +1111,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_find_questions(body)
             elif route == "/api/import-questions":
                 self._handle_import_questions(body)
+            elif route == "/api/questions/delete":
+                self._handle_delete_question(body)
             elif route == "/api/directions/expand":
                 self._handle_expand_directions(body)
             elif route == "/api/directions/batch-add":
@@ -1126,6 +1131,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_toggle_bookmark(body)
             elif route == "/api/state":
                 self._handle_update_state(body)
+            elif route == "/api/notes":
+                self._handle_save_note(body)
             elif route == "/api/history/delete":
                 self._handle_delete_session(body)
             else:
@@ -1331,6 +1338,15 @@ class Handler(BaseHTTPRequestHandler):
             "total": len(data["questions"]),
         })
 
+    def _handle_delete_question(self, body):
+        """删除单道题目。body: {question_id}"""
+        try:
+            removed = delete_question(body.get("question_id"))
+        except ValueError as e:
+            self._send(400, {"error": str(e)})
+            return
+        self._send(200, {"removed": removed, "message": "已删除该题"})
+
     def _handle_directions(self, body):
         """新增 / 删除自定义方向。body.action: add | delete。"""
         action = body.get("action", "add")
@@ -1462,6 +1478,15 @@ class Handler(BaseHTTPRequestHandler):
         if "mix_exclude" in body:
             state["mix_exclude"] = set_mix_exclude(body["mix_exclude"])
         self._send(200, state)
+
+    def _handle_save_note(self, body):
+        """保存/更新/清空某题的刷题笔记。body: {question_id, note}"""
+        try:
+            has, notes = save_note(body.get("question_id"), body.get("note"))
+        except ValueError as e:
+            self._send(400, {"error": str(e)})
+            return
+        self._send(200, {"notes": notes, "saved": has, "message": "笔记已保存" if has else "笔记已清除"})
 
     def _handle_delete_session(self, body):
         sid = body.get("session_id")

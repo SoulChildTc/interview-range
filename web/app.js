@@ -7,6 +7,7 @@ const state = {
   sessionId: null,
   chart: null,
   userState: { mastered: [], bookmarks: [], last_direction: null },
+  notes: {},           // 刷题笔记：{qid: 文本}
 };
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
@@ -17,6 +18,12 @@ async function loadUserState() {
     state.userState = await apiGet('/api/state');
   } catch (e) {
     state.userState = { mastered: [], bookmarks: [], last_direction: null };
+  }
+  try {
+    const r = await apiGet('/api/notes');
+    state.notes = r.notes || {};
+  } catch (e) {
+    state.notes = {};
   }
 }
 async function toggleMastered(qid) {
@@ -746,6 +753,17 @@ function setBankFilter(group, val) {
   });
 })();
 
+// 一键清空筛选（搜索词 + 重要度 + 掌握状态），空态提示里调用
+function clearBankFilter() {
+  bankFilter.search = '';
+  bankFilter.importance = 'all';
+  bankFilter.status = 'all';
+  const inp = document.getElementById('bank-search');
+  if (inp) inp.value = '';
+  renderBankFilterChips();
+  renderBankQuestions();
+}
+
 function renderBankQuestions() {
   if (!state.data) return;
   let qs = state.data.questions;
@@ -765,7 +783,17 @@ function renderBankQuestions() {
 
   const box = document.getElementById('bank-questions');
   if (!qs.length) {
-    box.innerHTML = '<div class="empty">这个筛选下没有题目，换个条件试试。</div>';
+    const hasFilter = bankFilter.search || bankFilter.importance !== 'all' || bankFilter.status !== 'all';
+    if (hasFilter) {
+      // 是筛选/搜索把题目过滤没了——不能让人误以为该方向没题，给出清除入口
+      box.innerHTML = `<div class="empty">
+        <div>没有符合当前筛选条件的题目</div>
+        <button class="q-btn clear-filter-btn" onclick="clearBankFilter()">清除筛选</button>
+      </div>`;
+    } else {
+      const hint = state.activeDir ? '这个方向还没有题目' : '题库还没有题目';
+      box.innerHTML = `<div class="empty">${hint}，去「联网找新题」添加吧。</div>`;
+    }
     return;
   }
   box.innerHTML = qs.map(q => {
@@ -788,13 +816,105 @@ function renderBankQuestions() {
         <ul>${q.answer.map(a => `<li>${esc(a)}</li>`).join('')}</ul>
         <div class="label">常见追问</div>
         <ul>${(q.followups || []).map(f => `<li class="followup" onclick="openFollowup('${q.id}','${encodeURIComponent(f)}')">${esc(f)}<span class="fu-arrow">›</span></li>`).join('')}</ul>
+        <div class="q-note-zone" id="qnote-${q.id}">${state.notes[q.id] ? renderNoteView(q.id) : ''}</div>
         <div class="q-actions" onclick="event.stopPropagation()">
           <button class="q-btn ${isMastered ? 'on' : ''}" onclick="toggleMastered('${q.id}')">${isMastered ? '✓ 已掌握' : '标记掌握'}</button>
           <button class="q-btn ${isBookmarked ? 'on bookmark-on' : ''}" onclick="toggleBookmark('${q.id}')">${isBookmarked ? '★ 已收藏' : '☆ 收藏'}</button>
+          <button class="q-btn q-note-btn ${state.notes[q.id] ? 'on' : ''}" data-qid="${q.id}" onclick="openNoteEditor('${q.id}')" title="记录这道题的要点、易错点、自己的理解">✎ 笔记</button>
+          <button class="q-btn q-del" onclick="askDeleteQuestion('${q.id}', this)">删除</button>
         </div>
       </div>
     </div>`;
   }).join('');
+}
+
+// ================================================================ 刷题笔记（就地编辑，独立存 data/notes.json）
+function renderNoteView(qid) {
+  const text = state.notes[qid] || '';
+  return `<div class="q-note-view">
+    <div class="q-note-label">我的笔记
+      <button class="q-note-edit-btn" onclick="openNoteEditor('${qid}')" title="编辑笔记">✎</button>
+    </div>
+    <div class="q-note-text">${esc(text)}</div>
+  </div>`;
+}
+
+function openNoteEditor(qid) {
+  const zone = document.getElementById('qnote-' + qid);
+  if (!zone) return;
+  const cur = state.notes[qid] || '';
+  zone.innerHTML = `<div class="q-note-edit">
+    <textarea id="qnote-ta-${qid}" rows="3" placeholder="记录这道题的要点、易错点、自己的理解（清空保存即删除笔记）…">${esc(cur)}</textarea>
+    <div class="q-note-ops">
+      <button class="q-btn q-note-save" onclick="saveQuestionNote('${qid}')">保存</button>
+      <button class="q-btn" onclick="renderQuestionNote('${qid}')">取消</button>
+    </div>
+  </div>`;
+  const ta = document.getElementById('qnote-ta-' + qid);
+  if (ta) ta.focus();
+}
+
+function renderQuestionNote(qid) {
+  const zone = document.getElementById('qnote-' + qid);
+  if (!zone) return;
+  zone.innerHTML = state.notes[qid] ? renderNoteView(qid) : '';
+}
+
+async function saveQuestionNote(qid) {
+  const ta = document.getElementById('qnote-ta-' + qid);
+  const val = ta ? ta.value : '';
+  try {
+    const r = await apiPost('/api/notes', { question_id: qid, note: val });
+    state.notes = r.notes || {};
+    renderQuestionNote(qid);
+    document.querySelectorAll('.q-actions .q-note-btn').forEach(b => {
+      if (b.dataset.qid === qid) b.classList.toggle('on', !!state.notes[qid]);
+    });
+    toast(r.message || '已保存');
+  } catch (e) {
+    toast('保存失败：' + e.message);
+  }
+}
+
+// 就地确认删除题目（不弹窗）：按钮位置变「删除此题？确定/取消」，取消只还原按钮、保留展开状态
+function askDeleteQuestion(qid, btn) {
+  const wrap = document.createElement('span');
+  wrap.className = 'q-del-confirm';
+  const restore = () => {
+    const b = document.createElement('button');
+    b.className = 'q-btn q-del';
+    b.textContent = '删除';
+    b.onclick = (e) => { e.stopPropagation(); askDeleteQuestion(qid, b); };
+    wrap.replaceWith(b);
+  };
+  const ok = document.createElement('button');
+  ok.className = 'q-btn q-del';
+  ok.textContent = '确定';
+  ok.onclick = (e) => { e.stopPropagation(); deleteQuestion(qid); };
+  const cancel = document.createElement('button');
+  cancel.className = 'q-btn';
+  cancel.textContent = '取消';
+  cancel.onclick = (e) => { e.stopPropagation(); restore(); };
+  const tip = document.createElement('span');
+  tip.className = 'q-del-tip';
+  tip.textContent = '删除此题？';
+  wrap.append(tip, ok, cancel);
+  btn.replaceWith(wrap);
+}
+
+async function deleteQuestion(qid) {
+  try {
+    await apiPost('/api/questions/delete', { question_id: qid });
+    state.data.questions = state.data.questions.filter(q => q.id !== qid);
+    state.userState.mastered = (state.userState.mastered || []).filter(i => i !== qid);
+    state.userState.bookmarks = (state.userState.bookmarks || []).filter(i => i !== qid);
+    toast('已删除该题');
+    renderBankQuestions();
+    renderDirList();
+  } catch (e) {
+    toast('删除失败：' + e.message);
+    renderBankQuestions();
+  }
 }
 
 // ================================================================ 追问对话（多实例：每次点击常见追问新开一个独立模态框，可同时叠开多个）

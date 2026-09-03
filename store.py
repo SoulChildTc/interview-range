@@ -41,6 +41,7 @@ SESSIONS_DIR = HISTORY_DIR / "sessions"
 FOLLOWUP_DIR = DATA_DIR / "followups"   # 追问对话会话缓存（按题目 id 分文件）
 LOG_DIR = DATA_DIR / "logs"
 STATE_FILE = DATA_DIR / "state.json"
+NOTES_FILE = DATA_DIR / "notes.json"   # 刷题笔记（按题目 id 独立分文件存储）
 HISTORY_INDEX = HISTORY_DIR / "index.json"
 QUESTIONS_META = QUESTIONS_DIR / "_meta.json"
 
@@ -482,6 +483,41 @@ def append_questions(direction, new_questions):
              len(new_questions), direction, len(data["questions"]))
 
 
+def delete_question(question_id):
+    """删除单道题目：从所在方向的题库文件移除该题，更新元数据时间戳，刷新缓存。
+
+    返回被删题 dict；题目不存在/方向文件缺失时抛 ValueError。学习状态与追问缓存中
+    残留的 id 无害（不引用即忽略），历史报告快照不受影响。
+    """
+    migrate_if_needed()
+    qid = str(question_id or "").strip()
+    if not qid:
+        raise ValueError("缺少题目 id")
+    data = get_questions()
+    q = next((x for x in data["questions"] if x.get("id") == qid), None)
+    if not q:
+        raise ValueError(f"题目不存在: {qid}")
+    direction = q.get("direction")
+    f = QUESTIONS_DIR / f"{direction}.json"
+    if not f.exists():
+        raise ValueError(f"方向题库文件不存在: {direction}")
+    fdata = json.loads(f.read_text(encoding="utf-8"))
+    before = len(fdata.get("questions", []))
+    fdata["questions"] = [x for x in fdata.get("questions", []) if x.get("id") != qid]
+    if len(fdata["questions"]) == before:
+        raise ValueError(f"题目不存在: {qid}")
+    f.write_text(json.dumps(fdata, ensure_ascii=False, indent=2), encoding="utf-8")
+    if QUESTIONS_META.exists():
+        meta = json.loads(QUESTIONS_META.read_text(encoding="utf-8"))
+        meta.setdefault("meta", {})["updated"] = time.strftime("%Y-%m-%d")
+        QUESTIONS_META.write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    reload_questions()
+    log_info("删除题目 %s（方向 %s）：%s", qid, direction, str(q.get("question", ""))[:40])
+    return {"id": qid, "direction": direction, "question": q.get("question", "")}
+
+
 # ---------------------------------------------------------------- 历史
 
 def load_history_index():
@@ -550,6 +586,37 @@ def delete_session(session_id):
 
 
 # ---------------------------------------------------------------- 学习状态
+
+def load_notes():
+    """加载全部刷题笔记：{qid: 笔记文本}。独立存于 data/notes.json，不混入题库/状态。"""
+    if NOTES_FILE.exists():
+        try:
+            s = json.loads(NOTES_FILE.read_text(encoding="utf-8"))
+            notes = s.get("notes", {})
+            return notes if isinstance(notes, dict) else {}
+        except Exception as e:
+            log_warn("读取刷题笔记失败: %s", e)
+    return {}
+
+
+def save_note(question_id, note):
+    """保存/更新某题的笔记；note 为空时删除该题笔记。返回 (has_note, notes)。"""
+    qid = str(question_id or "").strip()
+    if not qid:
+        raise ValueError("缺少题目 id")
+    ensure_dirs()
+    notes = load_notes()
+    text = str(note or "").strip()
+    if text:
+        notes[qid] = text
+    else:
+        notes.pop(qid, None)
+    NOTES_FILE.write_text(
+        json.dumps({"notes": notes}, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    log_info("保存笔记 %s（%s）", qid, "有内容" if text else "已清空")
+    return bool(text), notes
+
 
 def load_state():
     """加载用户学习状态（已掌握题目、收藏题目、上次选择的方向、混考排除方向）。"""

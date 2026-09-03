@@ -814,6 +814,7 @@
     color: var(--dim); text-align: center; padding: 56px 0; font-size: 14px;
     border: 1.5px dashed var(--line-strong); border-radius: var(--radius-lg); background: var(--sheet);
   }
+  .empty .clear-filter-btn { margin-top: 14px; }
 
   /* ---------- Toast ---------- */
   .toast {
@@ -1393,6 +1394,34 @@
   .q-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .q-btn.on { background: var(--good-soft); border-color: var(--good); color: var(--good); }
   .q-btn.on.bookmark-on { background: #fef3c7; border-color: #d97706; color: #92400e; }
+  .q-btn.q-del:hover { border-color: var(--bad); color: var(--bad); background: var(--bad-soft); }
+  .q-del-confirm { display: inline-flex; align-items: center; gap: 6px; }
+  .q-del-tip { font-size: 12px; color: var(--bad); font-weight: 700; white-space: nowrap; }
+  .q-btn.note-on { background: #fef3c7; border-color: #d97706; color: #92400e; }
+  .q-note-zone { margin-top: 10px; }
+  .q-note-view {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px;
+    padding: 8px 12px; font-size: 13px;
+  }
+  .q-note-label {
+    font-size: 11.5px; font-weight: 700; color: #b45309;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .q-note-edit-btn {
+    border: none; background: none; cursor: pointer; color: #b45309;
+    font-size: 13px; padding: 0 4px; border-radius: 6px; line-height: 1;
+  }
+  .q-note-edit-btn:hover { background: #fef3c7; }
+  .q-note-text { margin-top: 4px; color: #78350f; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .q-note-edit textarea {
+    width: 100%; box-sizing: border-box; resize: vertical;
+    border: 1.5px solid var(--line-strong); border-radius: 10px;
+    padding: 8px 10px; font-size: 13px; font-family: var(--sans);
+    background: var(--sheet); color: var(--ink); line-height: 1.5;
+  }
+  .q-note-edit textarea:focus { outline: none; border-color: var(--accent); }
+  .q-note-ops { display: flex; gap: 8px; margin-top: 8px; }
+  .q-btn.q-note-save:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .q-item.mastered { border-left: 3px solid var(--good); background: #fafdfb; }
   .q-item.mastered .q-text { color: var(--ink-soft); }
   .q-item .q-badge-row { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }

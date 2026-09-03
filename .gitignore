@@ -10,6 +10,7 @@ data/live/
 # 题库（含自定义方向内容）不随仓库分发，首次使用请自行建方向 + 联网找题/导入
 data/questions/
 data/state.json
+data/notes.json
 
 # 系统文件
 .DS_Store
