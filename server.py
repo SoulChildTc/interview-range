@@ -673,7 +673,7 @@ def _parse_marker(raw):
     return action, body
 
 
-def interviewer_followup_stream(session, question_obj, dialogue, max_followups=4):
+def interviewer_followup_stream(session, question_obj, dialogue, max_followups=6):
     """流式版面试官追问。yield 事件：
        ("reasoning", text) 思考片段
        ("content", text)   正文片段（已剥离标记行）
@@ -767,7 +767,8 @@ def _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_foll
         "   不许替他圆场、不许夸他答得好、不许顺着他的跑题内容往下聊。\n"
         "3. 如果回答切题但有明显遗漏/错误/太浅：追问一个具体、有深度的问题，针对他缺的那块刨根问底。\n"
         "   不要提示答案，不要替候选人总结要点。\n"
-        "4. 如果回答已覆盖大部分采分点、或你已追问过两轮以上：收尾，只说一句简短的收束语，例如\"好，这道题先到这。\"\n\n"
+        "4. 收尾只看回答质量，不看追问次数：候选人切题且已覆盖大部分采分点 → 收尾，只说一句简短的收束语，例如\"好，这道题先到这。\"\n"
+        "   若回答暴露明显漏洞/太浅/含糊或答非所问 → 继续深挖、刨根问底，直到候选人确实无话可说再收尾。\n\n"
         f"（本题候选人已答 {cand_rounds} 轮，最多 {max_followups} 轮）\n\n"
         "【输出格式，严格遵守】\n"
         "第一行只写一个标记：继续追问写 [FOLLOWUP]，收尾结束本题写 [DONE]\n"
@@ -776,7 +777,7 @@ def _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_foll
     )
 
 
-def interviewer_followup(session, question_obj, dialogue, max_followups=4):
+def interviewer_followup(session, question_obj, dialogue, max_followups=6):
     """AI 面试官根据候选人的回答决定下一步：追问 or 收尾进入下一题。
     dialogue: 当前题的对话记录 [{role, text}]，role=candidate/interviewer
     返回 (action, text)，action ∈ {"followup", "done"}"""
