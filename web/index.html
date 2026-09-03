@@ -78,7 +78,7 @@
             </div>
             <button class="lr-btn" onclick="resumeInterview()">继续面试</button>
           </div>
-          <!-- 综合混考：核心入口 -->
+          <!-- 综合混考：核心入口（点开始后弹窗选职级） -->
           <div class="mix-start-btn" onclick="startInterview('all')" role="button">
             <div class="mix-info">
               <div class="mix-title">开始综合混考</div>
@@ -298,6 +298,35 @@
     <span class="mini-tag">复盘</span>
     <span class="mini-tx" id="review-mini-title">复盘追问</span>
     <button id="review-mini-close" onclick="event.stopPropagation();closeReview()" title="关闭">×</button>
+  </div>
+</div>
+
+<!-- 开始面试配置（选职级后开始，综合混考与方向面试共用） -->
+<div class="modal-overlay" id="start-interview-modal">
+  <div class="modal si-modal">
+    <div class="si-head">
+      <span class="si-dir-chip" id="si-dir"></span>
+      <span class="si-hint">选择候选人职级</span>
+    </div>
+    <div class="si-levels">
+      <div class="si-level" data-level="junior" onclick="setSiLevel(event,'junior')">
+        <div class="si-lv-name">初级</div>
+        <div class="si-lv-desc">基础扎实<br>独立完成常规工作</div>
+      </div>
+      <div class="si-level on" data-level="mid" onclick="setSiLevel(event,'mid')">
+        <div class="si-lv-name">中级</div>
+        <div class="si-lv-desc">原理理解<br>能排查实际问题</div>
+      </div>
+      <div class="si-level" data-level="senior" onclick="setSiLevel(event,'senior')">
+        <div class="si-lv-name">资深</div>
+        <div class="si-lv-desc">原理深度<br>架构思维与疑难排查</div>
+      </div>
+    </div>
+    <div class="si-note">追问深度与评分录用标准将按职级调整</div>
+    <div class="modal-actions">
+      <button class="ghost" onclick="closeStartModal()">取消</button>
+      <button class="si-go" onclick="confirmStartInterview()">开始面试</button>
+    </div>
   </div>
 </div>
 

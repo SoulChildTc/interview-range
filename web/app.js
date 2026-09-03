@@ -6,6 +6,7 @@ const state = {
   activeDir: null,     // 全局当前方向（刷题/面试/报告共享）
   sessionId: null,
   chart: null,
+  level: 'mid',       // 候选人职级：junior / mid / senior（只影响追问深度与评分录用）
   userState: { mastered: [], bookmarks: [], last_direction: null },
   notes: {},           // 刷题笔记：{qid: 文本}
 };
@@ -1419,7 +1420,33 @@ function resumeInterview() {
 }
 
 function startInterview(dirId) {
+  // 先弹配置窗：确认本场并选职级（综合混考与方向面试共用）
   state.direction = dirId;
+  const chip = $('#si-dir');
+  if (dirId === 'all') {
+    chip.textContent = '综合混考';
+    chip.className = 'si-dir-chip chip-all';
+  } else {
+    const d = state.data.directions.find(x => x.id === dirId) || {};
+    chip.textContent = d.name || dirId;
+    chip.className = 'si-dir-chip ' + (DIR_CHIP[d.id] || 'chip-' + (d.color || 'indigo'));
+  }
+  $$('.si-level').forEach(o => o.classList.toggle('on', o.dataset.level === state.level));
+  document.getElementById('start-interview-modal').classList.add('show');
+}
+
+function setSiLevel(ev, level) {
+  state.level = level;
+  $$('.si-level').forEach(o => o.classList.toggle('on', o.dataset.level === level));
+}
+
+function closeStartModal() {
+  document.getElementById('start-interview-modal').classList.remove('show');
+}
+
+function confirmStartInterview() {
+  closeStartModal();
+  const dirId = state.direction;
   intQNo = 0;
   document.getElementById('interview-setup').style.display = 'none';
   document.getElementById('interview-room').style.display = 'flex';
@@ -1437,7 +1464,7 @@ function startInterview(dirId) {
   document.getElementById('int-skip-btn').style.display = '';
   // 保存上次选择的方向
   try { apiPost('/api/state', { last_direction: dirId }).catch(() => {}); } catch (e) {}
-  const body = { direction: dirId };
+  const body = { direction: dirId, level: state.level };
   if (dirId === 'all') body.exclude_dirs = state.userState.mix_exclude || [];
   apiPost('/api/session/new', body)
     .then(d => {

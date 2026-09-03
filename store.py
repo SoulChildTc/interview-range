@@ -189,12 +189,21 @@ _questions_cache = None
 DIR_COLOR_POOL = ["indigo", "teal", "orange", "violet", "red", "green", "cyan"]
 
 
-def add_direction(name, keyword, desc=""):
+def _default_direction_role(name, desc=""):
+    """根据方向名称/描述生成默认面试官角色（无专属配置时用，不写死岗位）。"""
+    desc = (desc or "").strip()
+    base = f"你是资深「{name}」方向面试官"
+    return f"{base}。考察 {desc}。" if desc else f"{base}。"
+
+
+def add_direction(name, keyword, desc="", role=""):
     """新增自定义方向：写入 _meta.json 的 directions 列表 + 创建空题库文件。
 
     - id 自动生成 `custom-N`（文件名安全，不与现有方向冲突）
     - 分配一个颜色用于前端 chip 展示
     - keyword 供联网找题时构造搜索词（没有专属配置的方向用 keyword 搜索）
+    - role：该方向面试官/出题的角色定位（一句话）。不传时按名称+描述自动生成，
+      不写死在代码里，随方向数据存储，方便开源后任何岗位使用
     返回新方向 dict；名称空/重名时抛 ValueError。
     """
     migrate_if_needed()
@@ -211,6 +220,7 @@ def add_direction(name, keyword, desc=""):
     directions = meta.get("directions", [])
     name = (name or "").strip()
     keyword = (keyword or "").strip()
+    role = (role or "").strip()
     if not name:
         raise ValueError("方向名称不能为空")
     # 回收站里有同名方向 → 直接还原并更新信息（相当于"重建"）
@@ -222,6 +232,16 @@ def add_direction(name, keyword, desc=""):
             deleted_same["keyword"] = keyword
         if desc:
             deleted_same["desc"] = desc.strip()
+        if role:
+            deleted_same["role"] = role
+        if not deleted_same.get("role"):
+            deleted_same["role"] = _default_direction_role(name, deleted_same.get("desc", ""))
+        if not deleted_same.get("queries"):
+            kw = deleted_same.get("keyword") or name
+            deleted_same["queries"] = [f"{kw} 面试题 真题", f"{kw} 面经", f"{kw} 面试考点 高频"]
+        if not deleted_same.get("finder_role"):
+            kw = deleted_same.get("keyword") or name
+            deleted_same["finder_role"] = f"{kw} 领域工程师"
         meta.setdefault("meta", {})["updated"] = time.strftime("%Y-%m-%d")
         QUESTIONS_META.write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -237,9 +257,13 @@ def add_direction(name, keyword, desc=""):
         n += 1
     did = f"custom-{n}"
     color = DIR_COLOR_POOL[len(directions) % len(DIR_COLOR_POOL)]
+    kw = keyword or name
     entry = {
         "id": did, "name": name, "desc": desc.strip(),
         "keyword": keyword, "color": color, "custom": True,
+        "role": role or _default_direction_role(name, desc),
+        "finder_role": f"{kw} 领域工程师",
+        "queries": [f"{kw} 面试题 真题", f"{kw} 面经", f"{kw} 面试考点 高频"],
     }
     directions.append(entry)
     meta["directions"] = directions

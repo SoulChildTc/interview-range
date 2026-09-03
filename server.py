@@ -359,15 +359,18 @@ FINDER_INSTRUCTION = {
 
 def ai_find_questions(direction, count=5):
     """联网搜索真题 -> AI 提炼新题 -> 返回候选题列表（不入库，待前端确认）。"""
-    # 内置方向用写死的搜索词；自定义方向用其 keyword / 名称构造搜索词
+    # 搜索词与命题人角色优先取方向数据（创建方向时生成），内置表/名称作兜底
     dir_info = next((d for d in get_directions() if d["id"] == direction), None)
-    if direction in SEARCH_QUERIES:
+    stored_queries = (dir_info or {}).get("queries") or []
+    if stored_queries:
+        queries = list(stored_queries)
+    elif direction in SEARCH_QUERIES:
         queries = SEARCH_QUERIES[direction]
-        role = FINDER_INSTRUCTION[direction]
     else:
         kw = ((dir_info or {}).get("keyword") or (dir_info or {}).get("name") or direction)
         queries = [f"{kw} 面试题 真题", f"{kw} 面经", f"{kw} 面试考点 高频"]
-        role = f"{kw} 领域工程师"
+    role = (dir_info or {}).get("finder_role") or FINDER_INSTRUCTION.get(direction) or \
+        f"{((dir_info or {}).get('keyword') or (dir_info or {}).get('name') or direction)} 领域工程师"
     search_text = anysearch_batch(queries)
     if not search_text:
         raise RuntimeError("联网搜索失败：anysearch 不可用或超时")
@@ -483,6 +486,79 @@ DIRECTION_INSTRUCTION = {
     "all": "你是资深互联网公司技术面试官，负责综合技术面试，考察候选人全栈运维能力：操作系统、网络、数据库、容器云原生、CI/CD、监控稳定性、AI 应用等。",
 }
 
+
+def _direction_role(direction_id):
+    """方向面试官/出题角色：优先方向数据里存的 role（创建方向时生成），
+    其次内置默认表，最后按方向名称/描述模板生成。不写死岗位，开源可扩展。"""
+    d = next((x for x in get_directions() if x["id"] == direction_id), None)
+    if d and d.get("role"):
+        return d["role"]
+    if direction_id in DIRECTION_INSTRUCTION:
+        return DIRECTION_INSTRUCTION[direction_id]
+    name = (d or {}).get("name") or direction_id
+    desc = (d or {}).get("desc") or ""
+    return f"你是资深「{name}」方向面试官。考察 {desc}。" if desc else f"你是资深「{name}」方向面试官。"
+
+
+# 候选人职级：只影响「追问深度 / 评分 / 录用」三处标准，不影响面试官身份与抽题
+CANDIDATE_LEVELS = {
+    "junior": "候选人职级：初级/校招。重点考察基础是否扎实、能否独立完成常规工作。追问点到为止，不深挖冷门细节；基础要点答到位即收尾，评价标准适当放宽。",
+    "mid": "候选人职级：中级。除基础外关注原理理解与实际排查能力。可适当追问验证理解深度，评价以能否解决实际问题为准。",
+    "senior": "候选人职级：资深。重点考察原理深度、架构思维与疑难排查能力。可深入追问，评价从严：只答表面点不算到位，需展示真正深度，否则扣分。",
+}
+
+
+def _candidate_level_desc(level):
+    return CANDIDATE_LEVELS.get(level) or CANDIDATE_LEVELS["mid"]
+
+
+def _ensure_direction_roles():
+    """启动时把写死的方向角色/搜索词迁移进方向数据（_meta.json）。
+
+    之后这些信息随方向数据存储（创建方向时生成/可编辑），代码里的内置表只作兜底。
+    老库无 role/queries/finder_role 的方向自动补齐，幂等。
+    """
+    try:
+        if not store.QUESTIONS_META.exists():
+            return
+        meta = json.loads(store.QUESTIONS_META.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    changed = False
+    for d in meta.get("directions", []):
+        did = d.get("id")
+        if not did:
+            continue
+        if not d.get("role"):
+            if did in DIRECTION_INSTRUCTION:
+                d["role"] = DIRECTION_INSTRUCTION[did]
+            else:
+                d["role"] = f"你是资深「{d.get('name', did)}」方向面试官。考察 {d.get('desc', '')}。" if d.get("desc") else f"你是资深「{d.get('name', did)}」方向面试官。"
+            changed = True
+        if not d.get("queries"):
+            if did in SEARCH_QUERIES:
+                d["queries"] = list(SEARCH_QUERIES[did])
+            else:
+                kw = d.get("keyword") or d.get("name") or did
+                d["queries"] = [f"{kw} 面试题 真题", f"{kw} 面经", f"{kw} 面试考点 高频"]
+            changed = True
+        if not d.get("finder_role"):
+            if did in FINDER_INSTRUCTION:
+                d["finder_role"] = FINDER_INSTRUCTION[did]
+            else:
+                kw = d.get("keyword") or d.get("name") or did
+                d["finder_role"] = f"{kw} 领域工程师"
+            changed = True
+    if not changed:
+        return
+    meta.setdefault("meta", {})["updated"] = time.strftime("%Y-%m-%d")
+    store.QUESTIONS_META.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    store.reload_questions()
+    log_info("已把方向角色/搜索词迁移进数据（%d 个方向）", len(meta.get("directions", [])))
+
+
 def batch_grade(session, batch_size=10):
     """一次 AI 调用评完全场题目（10 题以内一次搞定），避免多次串行调用。
     当前模型输出上限足够大，max_tokens 已放宽，无需分批。
@@ -491,7 +567,7 @@ def batch_grade(session, batch_size=10):
     if not answers:
         return []
     direction = session["direction"]
-    role = DIRECTION_INSTRUCTION.get(direction, DIRECTION_INSTRUCTION["linux"])
+    role = _direction_role(direction)
 
     def _grade_chunk(chunk, start_no):
         blocks = []
@@ -505,6 +581,7 @@ def batch_grade(session, batch_size=10):
         body = "\n\n".join(blocks)
         prompt = (
             f"{role}\n"
+            f"【本场考察标准】{_candidate_level_desc(session.get('level', 'mid'))}\n"
             f"下面是候选人在一场面试中对其中 {len(chunk)} 道题的完整回答（含面试官追问、候选人多轮补充）。\n"
             "请基于候选人全部轮次综合评分，只要对话里覆盖了关键点，就不应视为遗漏。\n"
             "重要：面试官没有追问到的知识点属于「未考察」，绝不能判为候选人的遗漏或弱点；"
@@ -578,7 +655,7 @@ def final_decision(session):
                 "level": "", "strong_points": [], "blocking_issues": [], "advice": []}
 
     direction = session["direction"]
-    role = DIRECTION_INSTRUCTION.get(direction, DIRECTION_INSTRUCTION["linux"])
+    role = _direction_role(direction)
     scores = [r.get("score", 0) for r in results] or [0]
     avg = round(sum(scores) / len(scores), 1)
 
@@ -597,6 +674,7 @@ def final_decision(session):
 
     prompt = (
         f"{role}\n"
+        f"【本场考察标准】{_candidate_level_desc(session.get('level', 'mid'))}\n"
         "现在你是这场面试的终面官 / 招聘决策人，需要给出**录用判定**。\n"
         "不要只看平均分，要像真实招聘那样综合判断：技术深度、实战经验、思路是否清晰、\n"
         "被追问后的表现（能不能补上来）、有没有一票否决的硬伤、以及岗位匹配度。\n"
@@ -680,7 +758,7 @@ def interviewer_followup_stream(session, question_obj, dialogue, max_followups=6
        ("meta", {action, text})  结束时给出最终判定
     """
     direction = session["direction"]
-    role = DIRECTION_INSTRUCTION.get(direction, DIRECTION_INSTRUCTION["linux"])
+    role = _direction_role(direction)
     cand_rounds = sum(1 for d in dialogue if d.get("role") == "candidate")
 
     if cand_rounds >= max_followups:
@@ -696,7 +774,7 @@ def interviewer_followup_stream(session, question_obj, dialogue, max_followups=6
     history = "\n".join(history_lines)
     hint = "；".join(question_obj.get("answer", []) or []) or "（无）"
 
-    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups)
+    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, session.get("level", "mid"))
     buf = ""          # 原始 content 累积
     head_done = False # 标记行是否已确定
     action = "followup"
@@ -761,20 +839,21 @@ def _interviewer_dialogue(dialogue):
     return "\n".join(lines)
 
 
-def _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups):
+def _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, level="mid"):
     return (
         f"{role}\n"
+        f"【本场考察标准】{_candidate_level_desc(level)}\n"
         f"【你现在正在考察的这一道题】{question_obj.get('question', '')}\n"
         f"【参考采分点（只给你判断用，绝不能念给候选人）】{hint}\n\n"
         f"【本题的对话记录】（下面所有\"候选人：\"都是针对**本题**的回答）\n{history}\n\n"
         "你是本场考官，现在轮到你说话。严格遵守：\n"
-        "1. 只能围绕**本题**说话。绝对不要在本轮发言里提出新题目或跳到别的知识点——下一题会由系统另外发出。\n"
-        "2. 如果候选人答非所问（回答的内容跟本题无关），必须当场指出他跑题了，并把本题重新问一遍让他回答。\n"
-        "   不许替他圆场、不许夸他答得好、不许顺着他的跑题内容往下聊。\n"
-        "3. 如果回答切题但有明显遗漏/错误/太浅：追问一个具体、有深度的问题，针对他缺的那块刨根问底。\n"
-        "   不要提示答案，不要替候选人总结要点。\n"
-        "4. 收尾只看回答质量，不看追问次数：候选人切题且已覆盖大部分采分点 → 收尾，只说一句简短的收束语，例如\"好，这道题先到这。\"\n"
-        "   若回答暴露明显漏洞/太浅/含糊或答非所问 → 继续深挖、刨根问底，直到候选人确实无话可说再收尾。\n\n"
+        "1. 只能围绕**本题**说话，绝不提出新题目或跳到别的知识点——下一题由系统另行发出。\n"
+        "2. 像一位真实的资深面试官一样判断本轮：\n"
+        "   - 候选人切题且答得到位（覆盖核心要点、理解正确）→ 简短收尾，例如\"好，这道题先到这。\"\n"
+        "   - 候选人明显答浅、含糊或答错 → 针对缺口追问一个问题；若跑题则当场指出并重新问本题；\n"
+        "   - 追问只求考察是否真懂原理和实际用法，不为难倒候选人而钻牛角尖；\n"
+        "   - 不替他圆场、不夸他答得好、不顺着跑题聊下去。\n"
+        "3. 不要提示答案，不要替候选人总结要点。\n\n"
         f"（本题候选人已答 {cand_rounds} 轮，最多 {max_followups} 轮）\n\n"
         "【输出格式，严格遵守】\n"
         "第一行只写一个标记：继续追问写 [FOLLOWUP]，收尾结束本题写 [DONE]\n"
@@ -788,13 +867,13 @@ def interviewer_followup(session, question_obj, dialogue, max_followups=6):
     dialogue: 当前题的对话记录 [{role, text}]，role=candidate/interviewer
     返回 (action, text)，action ∈ {"followup", "done"}"""
     direction = session["direction"]
-    role = DIRECTION_INSTRUCTION.get(direction, DIRECTION_INSTRUCTION["linux"])
+    role = _direction_role(direction)
     cand_rounds = sum(1 for d in dialogue if d.get("role") == "candidate")
     if cand_rounds >= max_followups:
         return "done", "好，这道题聊得差不多了，进入下一题。"
     history = _interviewer_dialogue(dialogue)
     hint = "；".join(question_obj.get("answer", []) or []) or "（无）"
-    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups)
+    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, session.get("level", "mid"))
     raw = chat_completion(
         [{"role": "system", "content": INTERVIEWER_SYSTEM},
          {"role": "user", "content": prompt}],
@@ -864,10 +943,7 @@ def ai_expand_directions(area_name, count=6):
 
 def ai_generate_question(direction, asked_topics=None):
     """AI 现场出一道新题（不入库）。返回题目对象（含 id=topic摘要，answer 为参考采分点）。"""
-    role = AI_QUESTION_INSTRUCTION.get(direction)
-    if not role:
-        d = next((x for x in get_directions() if x["id"] == direction), None)
-        role = f"资深「{(d or {}).get('name', direction)}」方向面试官"
+    role = _direction_role(direction)
     asked = asked_topics or []
     asked_line = "、".join(asked) if asked else "（首题，无历史）"
 
@@ -1535,10 +1611,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send(400, {"error": f"方向 {direction} 暂无题目"})
             return
         sid = uuid.uuid4().hex[:12]
+        level = body.get("level")
+        if level not in CANDIDATE_LEVELS:
+            level = "mid"
         session = {
             "session_id": sid,
             "direction": direction,
             "direction_name": direction_name,
+            "level": level,
             "queue": [q["id"] for q in qs[:10]],   # 每场最多 10 题
             "total": len(qs[:10]),               # 本场目标题数（AI 插入题不计入）
             "current": None,
@@ -1858,6 +1938,7 @@ def main():
         log.info("已恢复 %d 个未完成的面试会话", len(SESSIONS))
     # 预检：题库与 AI 配置（首次调用触发旧数据迁移）
     try:
+        _ensure_direction_roles()
         qs = get_questions()
         log.info("题库加载成功: %d 题 / %d 个方向", len(qs['questions']), len(qs['directions']))
     except Exception as e:
