@@ -2119,6 +2119,13 @@ function reviewCardHTML(q, origIdx, sessIdx) {
   if (q.missed_points && q.missed_points.length) rows.push(['miss', '遗漏', q.missed_points]);
   if (q.strengths && q.strengths.length) rows.push(['str', '优点', q.strengths]);
   if (q.weaknesses && q.weaknesses.length) rows.push(['weak', '弱点', q.weaknesses]);
+  // 头部徽标：弱点 / 遗漏数量（0 也显示；0 用中性灰，非 0 高亮对应色）
+  const mc = (q.missed_points || []).length;
+  const wc = (q.weaknesses || []).length;
+  const badge = `<span class="rvcard-badges">
+    <span class="rvcard-badge miss ${mc ? '' : 'zero'}">遗漏 ${mc}</span>
+    <span class="rvcard-badge weak ${wc ? '' : 'zero'}">弱点 ${wc}</span>
+  </span>`;
   const secs = [];
   if (q.answer) secs.push(`<div class="rv-sec rv-sec-ans" onclick="toggleAnswerSec(this)">
       <div class="rv-sec-label">我的回答 <span class="rv-sec-caret"></span></div>
@@ -2136,6 +2143,7 @@ function reviewCardHTML(q, origIdx, sessIdx) {
     <div class="rvcard-head" onclick="toggleMyAnswer(this.closest('.rvcard'))">
       <span class="rvcard-score" style="color:${rc};background:${scoreSoft(q.score)}">${q.score}<small>分</small></span>
       <span class="rvcard-q">${esc(q.question || '')}</span>
+      ${badge}
     </div>
     <div class="rv-open">
       ${secs.join('')}
