@@ -701,13 +701,15 @@ def interviewer_followup_stream(session, question_obj, dialogue, max_followups=6
     head_done = False # 标记行是否已确定
     action = "followup"
     body_out = ""
+    saw_reasoning = False  # 是否输出过思考（用于判断"思考后正文被截断"）
 
     for kind, piece in chat_completion_stream(
         [{"role": "system", "content": INTERVIEWER_SYSTEM},
          {"role": "user", "content": prompt}],
-        temperature=0.6, max_tokens=600,
+        temperature=0.6, max_tokens=2048,
     ):
         if kind == "reasoning":
+            saw_reasoning = True
             yield ("reasoning", piece)
             continue
         buf += piece
@@ -740,8 +742,12 @@ def interviewer_followup_stream(session, question_obj, dialogue, max_followups=6
 
     text = body_out.strip()
     if not text:
+        # 只出了思考、正文为空（如 max_tokens/网络截断）：标记中断，交调用方提示重试
+        if saw_reasoning:
+            yield ("meta", {"action": "followup", "text": "", "interrupted": True})
+            return
         text = "好，这道题先到这，我们进入下一题。" if action == "done" else "能再具体说说吗？"
-    yield ("meta", {"action": action, "text": text})
+    yield ("meta", {"action": action, "text": text, "interrupted": False})
 
 
 INTERVIEWER_SYSTEM = "你是严格的面试官。第一行只输出 [FOLLOWUP] 或 [DONE]，第二行开始说要对候选人说的话。"
@@ -793,7 +799,7 @@ def interviewer_followup(session, question_obj, dialogue, max_followups=6):
         [{"role": "system", "content": INTERVIEWER_SYSTEM},
          {"role": "user", "content": prompt}],
         temperature=0.6,
-        max_tokens=600,
+        max_tokens=2048,
     )
     return _parse_marker(raw)
 
@@ -1759,6 +1765,7 @@ class Handler(BaseHTTPRequestHandler):
         s.setdefault("dialogue", []).append({"role": "candidate", "text": answer})
         self._sse_start()
         action, itext = "followup", ""
+        interrupted = False
         try:
             for kind, payload in interviewer_followup_stream(s, q, s["dialogue"]):
                 if kind == "reasoning":
@@ -1768,11 +1775,19 @@ class Handler(BaseHTTPRequestHandler):
                 elif kind == "meta":
                     action = payload.get("action", "followup")
                     itext = payload.get("text", "")
+                    interrupted = bool(payload.get("interrupted"))
         except Exception as e:
             # 流中途失败：回滚这轮回答，让前端可重试
             if s.get("dialogue") and s["dialogue"][-1].get("role") == "candidate":
                 s["dialogue"].pop()
             self._sse("error", {"message": str(e)})
+            return
+
+        if interrupted:
+            # 思考后正文被截断：回滚候选回答、不落假回复，前端提示重试
+            if s.get("dialogue") and s["dialogue"][-1].get("role") == "candidate":
+                s["dialogue"].pop()
+            self._sse("interrupted", {"message": "回答生成中断，请重试"})
             return
 
         s["dialogue"].append({"role": "interviewer", "text": itext})

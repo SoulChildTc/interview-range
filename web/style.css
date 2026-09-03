@@ -1422,6 +1422,7 @@
   .q-note-edit textarea:focus { outline: none; border-color: var(--accent); }
   .q-note-ops { display: flex; gap: 8px; margin-top: 8px; }
   .q-btn.q-note-save:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .int-retry-btn { margin-top: 10px; }
   .q-item.mastered { border-left: 3px solid var(--good); background: #fafdfb; }
   .q-item.mastered .q-text { color: var(--ink-soft); }
   .q-item .q-badge-row { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }

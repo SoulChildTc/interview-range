@@ -1521,6 +1521,7 @@ function addChat(role, html) {
 function renderResult(r) { /* 不再使用（评分统一在结束后展示） */ }
 
 let intAbort = null;  // 模拟面试流式的 AbortController
+let intRetry = null;  // 中断重试数据 {qid, answer}
 
 // 面试回答输入框：默认内容多行高度，输入时自动增高（上限 160px）
 (function () {
@@ -1561,8 +1562,6 @@ async function submitAnswer() {
   if (intAbort) { intAbort.abort(); return; }
   const answer = $('#int-answer').value.trim();
   if (!answer) { toast('先写点回答再发送'); return; }
-  setIntSendBtn('stop');
-  $('#int-status').textContent = '';
   // 已作答 -> 隐藏返回按钮（此后只能走"提前结束"）
   document.getElementById('int-back-btn').style.display = 'none';
   // 清空并重置输入框高度（回到单行），再发送消息并滚到底部
@@ -1571,10 +1570,17 @@ async function submitAnswer() {
   $('#int-answer').style.height = '';
   addChat('me', esc(answer));
   intCurAnswered = true;  // 当前题已有回答
+  intRetry = { qid: state.currentQid, answer };
+  await sendInterviewAnswer(answer);
+}
+
+async function sendInterviewAnswer(answer) {
+  setIntSendBtn('stop');
+  $('#int-status').textContent = '';
   const intChatBox = document.getElementById('int-chat');
   if (intChatBox) intChatBox.scrollTop = intChatBox.scrollHeight;
   const bubble = createStreamBubble('int-chat', 'ai', '面试官思考中');
-  let meta = null, errMsg = null, aborted = false;
+  let meta = null, errMsg = null, aborted = false, sawContent = false, interrupted = false;
   const ctrl = new AbortController();
   intAbort = ctrl;
   try {
@@ -1582,8 +1588,9 @@ async function submitAnswer() {
       { session_id: state.sessionId, question_id: state.currentQid, answer },
       (ev, p) => {
         if (ev === 'reasoning') bubble.reasoning(p.t || '');
-        else if (ev === 'content') bubble.content(p.t || '');
+        else if (ev === 'content') { sawContent = true; bubble.content(p.t || ''); }
         else if (ev === 'meta') meta = p;
+        else if (ev === 'interrupted') interrupted = true;
         else if (ev === 'error') errMsg = p.message || '未知错误';
       }, ctrl.signal);
   } catch (e) {
@@ -1599,6 +1606,21 @@ async function submitAnswer() {
     return;
   }
   bubble.finish('面试官的思考');
+  if (interrupted) {
+    // 思考后正文被截断：明确提示 + 重试，不显示兜底废话
+    bubble.setText('回答生成中断');
+    const retryBtn = document.createElement('button');
+    retryBtn.className = 'q-btn int-retry-btn';
+    retryBtn.textContent = '重试';
+    retryBtn.onclick = () => {
+      if (!intRetry) return;
+      bubble.el.remove();
+      sendInterviewAnswer(intRetry.answer);
+    };
+    bubble.el.appendChild(retryBtn);
+    $('#int-answer').focus();
+    return;
+  }
   if (errMsg || !meta) {
     bubble.setText('发送失败：' + (errMsg || '没有收到回复，请重试'));
     $('#int-status').textContent = '';
