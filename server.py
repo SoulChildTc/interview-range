@@ -1820,7 +1820,7 @@ class Handler(BaseHTTPRequestHandler):
             "1. 候选人追问知识点细节 -> 深入讲解，举例子、给命令/配置/代码\n"
             "2. 候选人对评分有异议/反驳 -> 认真核对，说得对就承认并修正，说得不对就解释为什么\n"
             "3. 候选人想练习 -> 出一道相关的追问让他回答\n"
-            "风格：口语化、有针对性、不啰嗦，像真人在辅导。回答用中文。"
+            "风格：口语化、有针对性、像真人在辅导。回答要**简短精炼、直击要点**，不要长篇大论铺开，把最关键的点讲清楚即可；需要举例时给最小必要示例，不堆砌。回答用中文。"
         )
         ctx = (
             f"【题目】{question}\n"
@@ -1839,7 +1839,7 @@ class Handler(BaseHTTPRequestHandler):
                 msgs.append({"role": "user", "content": text})
             elif role == "assistant":
                 msgs.append({"role": "assistant", "content": text})
-        raw = chat_completion(msgs, temperature=0.6, max_tokens=1200)
+        raw = chat_completion(msgs, temperature=0.6, max_tokens=2000)
         self._send(200, {"text": raw.strip()})
 
     def _handle_answer_stream(self, body):
@@ -1918,7 +1918,7 @@ class Handler(BaseHTTPRequestHandler):
             "1. 候选人追问知识点细节 -> 深入讲解，举例子、给命令/配置/代码\n"
             "2. 候选人对评分有异议/反驳 -> 认真核对，说得对就承认并修正，说得不对就解释为什么\n"
             "3. 候选人想练习 -> 出一道相关的追问让他回答\n"
-            "风格：口语化、有针对性、不啰嗦，像真人在辅导。回答用中文。"
+            "风格：口语化、有针对性、像真人在辅导。回答要**简短精炼、直击要点**，不要长篇大论铺开，把最关键的点讲清楚即可；需要举例时给最小必要示例，不堆砌。回答用中文。"
         )
         ctx = (
             f"【题目】{question}\n"
@@ -1938,7 +1938,7 @@ class Handler(BaseHTTPRequestHandler):
 
         self._sse_start()
         try:
-            for kind, piece in chat_completion_stream(msgs, temperature=0.6, max_tokens=1200):
+            for kind, piece in chat_completion_stream(msgs, temperature=0.6, max_tokens=2000):
                 self._sse(kind, {"t": piece})
         except Exception as e:
             self._sse("error", {"message": str(e)}); return
