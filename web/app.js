@@ -1443,7 +1443,19 @@ function startInterview(dirId) {
     chip.className = 'si-dir-chip ' + (DIR_CHIP[d.id] || 'chip-' + (d.color || 'indigo'));
   }
   $$('.si-level').forEach(o => o.classList.toggle('on', o.dataset.level === state.level));
+  // 重置自定义 JD：每次开始面试都是独立的
+  const jdCheck = document.getElementById('si-jd-check');
+  if (jdCheck) { jdCheck.checked = false; }
+  document.getElementById('si-jd-input').style.display = 'none';
+  document.getElementById('si-jd-input').value = '';
   document.getElementById('start-interview-modal').classList.add('show');
+}
+
+// 勾选自定义 JD：展开/收起输入框
+function onJdToggle(cb) {
+  const input = document.getElementById('si-jd-input');
+  input.style.display = cb.checked ? 'block' : 'none';
+  if (cb.checked) input.focus();
 }
 
 function setSiLevel(ev, level) {
@@ -1456,6 +1468,18 @@ function closeStartModal() {
 }
 
 function confirmStartInterview() {
+  // 自定义 JD：勾选但未输入 → 阻止开始
+  const jdCheck = document.getElementById('si-jd-check');
+  const jdInput = document.getElementById('si-jd-input');
+  let jd = '';
+  if (jdCheck && jdCheck.checked) {
+    jd = (jdInput.value || '').trim();
+    if (!jd) {
+      toast('勾选了自定义 JD，请先粘贴职位描述，或取消勾选');
+      jdInput.focus();
+      return;
+    }
+  }
   closeStartModal();
   const dirId = state.direction;
   intQNo = 0;
@@ -1476,6 +1500,7 @@ function confirmStartInterview() {
   // 保存上次选择的方向
   try { apiPost('/api/state', { last_direction: dirId }).catch(() => {}); } catch (e) {}
   const body = { direction: dirId, level: state.level };
+  if (jd) body.jd = jd;
   if (dirId === 'all') body.exclude_dirs = state.userState.mix_exclude || [];
   apiPost('/api/session/new', body)
     .then(d => {

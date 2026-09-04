@@ -675,9 +675,14 @@ def final_decision(session):
         )
     body = "\n\n".join(blocks)
 
+    jd = session.get("jd") or ""
+    jd_block = ""
+    if jd.strip():
+        jd_block = f"【候选人应聘岗位的 JD】（你是该岗位的招聘决策人，录用判定要重点参考 JD 要求与岗位匹配度）\n{jd.strip()}\n\n"
     prompt = (
         f"{role}\n"
         f"【本场考察标准】{_candidate_level_desc(session.get('level', 'mid'))}\n"
+        f"{jd_block}"
         "现在你是这场面试的终面官 / 招聘决策人，需要给出**录用判定**。\n"
         "不要只看平均分，要像真实招聘那样综合判断：技术深度、实战经验、思路是否清晰、\n"
         "被追问后的表现（能不能补上来）、有没有一票否决的硬伤、以及岗位匹配度。\n"
@@ -777,7 +782,7 @@ def interviewer_followup_stream(session, question_obj, dialogue, max_followups=6
     history = "\n".join(history_lines)
     hint = "；".join(question_obj.get("answer", []) or []) or "（无）"
 
-    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, session.get("level", "mid"))
+    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, session.get("level", "mid"), session.get("jd", ""))
     buf = ""          # 原始 content 累积
     head_done = False # 标记行是否已确定
     action = "followup"
@@ -842,10 +847,17 @@ def _interviewer_dialogue(dialogue):
     return "\n".join(lines)
 
 
-def _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, level="mid"):
+def _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, level="mid", jd=""):
+    jd_block = ""
+    if jd and jd.strip():
+        jd_block = (
+            f"【候选人应聘岗位的 JD】（候选人投递了这个岗位，你作为该岗位的面试官，"
+            f"考察与追问要结合 JD 要求，判断候选人是否匹配岗位）\n{jd.strip()}\n\n"
+        )
     return (
         f"{role}\n"
         f"【本场考察标准】{_candidate_level_desc(level)}\n"
+        f"{jd_block}"
         f"【你现在正在考察的这一道题】{question_obj.get('question', '')}\n"
         f"【参考采分点（只给你判断用，绝不能念给候选人）】{hint}\n\n"
         f"【本题的对话记录】（下面所有\"候选人：\"都是针对**本题**的回答）\n{history}\n\n"
@@ -876,7 +888,7 @@ def interviewer_followup(session, question_obj, dialogue, max_followups=6):
         return "done", "好，这道题聊得差不多了，进入下一题。"
     history = _interviewer_dialogue(dialogue)
     hint = "；".join(question_obj.get("answer", []) or []) or "（无）"
-    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, session.get("level", "mid"))
+    prompt = _interviewer_prompt(role, question_obj, hint, history, cand_rounds, max_followups, session.get("level", "mid"), session.get("jd", ""))
     raw = chat_completion(
         [{"role": "system", "content": INTERVIEWER_SYSTEM},
          {"role": "user", "content": prompt}],
@@ -1622,6 +1634,7 @@ class Handler(BaseHTTPRequestHandler):
             "direction": direction,
             "direction_name": direction_name,
             "level": level,
+            "jd": (body.get("jd") or "").strip(),   # 自定义 JD（可选）：面试官围绕岗位要求考察
             "queue": [q["id"] for q in qs[:10]],   # 每场最多 10 题
             "total": len(qs[:10]),               # 本场目标题数（AI 插入题不计入）
             "current": None,

@@ -323,6 +323,13 @@
       </div>
     </div>
     <div class="si-note">追问深度与评分录用标准将按职级调整</div>
+    <div class="si-jd">
+      <label class="si-jd-toggle">
+        <input type="checkbox" id="si-jd-check" onchange="onJdToggle(this)">
+        <span>使用自定义 JD 面试</span>
+      </label>
+      <textarea id="si-jd-input" rows="5" placeholder="粘贴招聘 JD（职位描述）。面试官将作为该岗位的面试官，围绕 JD 要求考察你，并判断岗位匹配度。" style="display:none"></textarea>
+    </div>
     <div class="modal-actions">
       <button class="ghost" onclick="closeStartModal()">取消</button>
       <button class="si-go" onclick="confirmStartInterview()">开始面试</button>
