@@ -62,6 +62,17 @@ async function toggleBookmark(qid) {
     toast(r.action === 'added' ? '已收藏' : '已取消收藏');
   } catch (e) { toast('操作失败：' + e.message); }
 }
+// 面试房间内的收藏：就地切换星标状态，不重渲染刷题页
+async function toggleIntBookmark(qid, btn) {
+  if (!qid) { toast('此题无法收藏'); return; }
+  try {
+    const r = await apiPost('/api/state/bookmarks', { question_id: qid });
+    state.userState.bookmarks = r.bookmarks;
+    const on = (r.bookmarks || []).includes(qid);
+    if (btn) btn.classList.toggle('on', on);
+    toast(r.action === 'added' ? '已收藏，刷题时可筛选复习' : '已取消收藏');
+  } catch (e) { toast('操作失败：' + e.message); }
+}
 
 // ================================================================ 工具
 function toast(msg) {
@@ -1394,7 +1405,7 @@ function resumeInterview() {
   const cq = s.current_q;
   state.currentQid = cq ? cq.id : s.current;
   if (cq && cq.question) {
-    showQuestion({ topic: cq.topic, importance: cq.importance, difficulty: cq.difficulty, question: cq.question }, intQNo);
+    showQuestion(cq, intQNo);
   }
   // 当前题的对话
   const dl = s.dialogue || [];
@@ -1511,6 +1522,7 @@ function showQuestion(q, no) {
         ${q.importance ? `<span class="q-meta-badge ${impCls}">${esc(q.importance)}</span>` : ''}
         ${q.difficulty ? `<span class="q-meta-badge ${diffCls}">${esc(q.difficulty)}</span>` : ''}
         <span class="q-no">第 ${no} 题</span>
+        ${q.id ? `<button class="iv-qcard-bm ${state.userState.bookmarks.includes(q.id) ? 'on' : ''}" onclick="toggleIntBookmark('${q.id}', this)" title="收藏此题，刷题时可筛选复习">★</button>` : ''}
       </div>
       <div class="iv-qcard-text">${esc(q.question)}</div>
     </div>`;
@@ -1771,7 +1783,7 @@ function questionDetailHTML(r, i, sessIdx) {
     <div style="font-size:12px;color:var(--dim);margin-bottom:8px">${esc(r.topic || '')}</div>
     <details style="margin-bottom:8px">
       <summary style="cursor:pointer;font-size:12.5px;color:var(--accent2);font-weight:700">我的回答（点开看）</summary>
-      <div style="margin-top:8px;font-size:13px;line-height:1.75;color:var(--ink-soft);white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px">${esc(r.answer || '')}</div>
+      <div style="margin-top:8px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px">${formatAnswer(r.answer || '')}</div>
     </details>
     <div style="font-size:13px;line-height:1.75;color:var(--ink-soft)">${esc(r.comment || '')}</div>
     <div class="rv-detail-grid">
@@ -2127,9 +2139,9 @@ function reviewCardHTML(q, origIdx, sessIdx) {
     <span class="rvcard-badge weak ${wc ? '' : 'zero'}">弱点 ${wc}</span>
   </span>`;
   const secs = [];
-  if (q.answer) secs.push(`<div class="rv-sec rv-sec-ans" onclick="toggleAnswerSec(this)">
-      <div class="rv-sec-label">我的回答 <span class="rv-sec-caret"></span></div>
-      <div class="rv-answer">${esc(q.answer)}</div>
+  if (q.answer) secs.push(`<div class="rv-sec rv-sec-ans">
+      <div class="rv-sec-label" onclick="toggleAnswerSec(this.closest('.rv-sec-ans'))">我的回答 <span class="rv-sec-caret"></span></div>
+      <div class="rv-answer">${formatAnswer(q.answer)}</div>
     </div>`);
   if (q.comment) secs.push(`<div class="rv-sec">
       <div class="rv-sec-label">面试官点评</div>
@@ -2163,6 +2175,31 @@ function toggleMyAnswer(card) {
 // 我的回答二次展开
 function toggleAnswerSec(sec) {
   sec.classList.toggle('open');
+}
+
+// 把"候选人：/面试官："对话文本按轮次渲染：每轮对话为一段，带角色标签；
+// 段内原有的换行保留在正文里（对齐正文，不顶头、不产生额外分隔线）
+function formatAnswer(text) {
+  const parts = [];
+  let cur = null; // { who, lines }
+  for (const raw of String(text || '').split('\n')) {
+    const m = raw.match(/^(候选人|面试官)[:：]([\s\S]*)$/);
+    if (m) {
+      if (cur) parts.push(cur);
+      cur = { who: m[1], lines: [m[2]] };
+    } else if (cur) {
+      cur.lines.push(raw);
+    } else {
+      parts.push({ who: null, lines: [raw] }); // 开头即无角色前缀的孤立行
+    }
+  }
+  if (cur) parts.push(cur);
+  return parts.map(p => {
+    const body = esc(p.lines.join('\n'));
+    if (!p.who) return `<div class="rv-ans-line plain"><span class="rv-ans-body">${body}</span></div>`;
+    const cls = p.who === '面试官' ? 'iv' : 'me';
+    return `<div class="rv-ans-line ${cls}"><span class="rv-ans-who">${p.who}</span><span class="rv-ans-body">${body}</span></div>`;
+  }).join('');
 }
 
 async function deleteSession(sid, idx) {

@@ -674,6 +674,16 @@
     white-space: pre-wrap;
   }
   .rv-sec-ans.open .rv-answer { display: block; }
+  /* 对话分行：候选人/面试官角色标签 */
+  .rv-ans-line { display: flex; gap: 9px; padding: 5px 0; align-items: flex-start; }
+  .rv-ans-line + .rv-ans-line { border-top: 1px dashed var(--line); }
+  .rv-ans-who {
+    flex-shrink: 0; font-size: 11px; font-weight: 800; padding: 2px 8px;
+    border-radius: 6px; line-height: 1.6; letter-spacing: .03em;
+  }
+  .rv-ans-line.me .rv-ans-who { color: var(--accent-strong); background: var(--accent-soft); }
+  .rv-ans-line.iv .rv-ans-who { color: var(--dim); background: var(--bg); border: 1px solid var(--line); }
+  .rv-ans-body { flex: 1; min-width: 0; white-space: pre-wrap; }
   .rv-comment { font-size: 13px; line-height: 1.75; color: var(--ink-soft); }
   .rv-tagrow { display: flex; align-items: flex-start; gap: 8px; padding: 3px 0; }
   .rv-taglbl {
@@ -1507,6 +1517,14 @@
     border-color: rgba(99,102,241,.2);
   }
   .iv-qcard-tags { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+  /* 面试题卡收藏星标：推最右，金色高亮 */
+  .iv-qcard-bm {
+    margin-left: auto; background: none; border: none; cursor: pointer;
+    color: var(--dim); font-size: 17px; line-height: 1; padding: 2px 3px;
+    font-family: var(--sans); transition: color .15s, transform .15s;
+  }
+  .iv-qcard-bm:hover { color: #f59e0b; transform: scale(1.2); }
+  .iv-qcard-bm.on { color: #f59e0b; }
   .iv-qcard-tags .q-topic {
     font-size: 12px; font-weight: 800; color: #fff;
     background: linear-gradient(135deg, #6366f1, #4f46e5);
