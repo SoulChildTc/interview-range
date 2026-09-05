@@ -73,6 +73,23 @@ async function toggleIntBookmark(qid, btn) {
     toast(r.action === 'added' ? '已收藏，刷题时可筛选复习' : '已取消收藏');
   } catch (e) { toast('操作失败：' + e.message); }
 }
+// 报告 / 复盘页的收藏：就地切换按钮文字与高亮，不重渲染
+async function toggleBookmarkQuick(qid, btn) {
+  if (!qid) { toast('此题无法收藏'); return; }
+  try {
+    const r = await apiPost('/api/state/bookmarks', { question_id: qid });
+    state.userState.bookmarks = r.bookmarks;
+    const on = (r.bookmarks || []).includes(qid);
+    if (btn) {
+      const label = btn.querySelector('.rv-btn-label');
+      if (label) label.textContent = on ? '已收藏' : '收藏';
+      else btn.textContent = on ? '已收藏' : '收藏';
+      btn.classList.toggle('on', on);
+      btn.classList.toggle('bookmark-on', on);
+    }
+    toast(r.action === 'added' ? '已收藏，刷题时可筛选复习' : '已取消收藏');
+  } catch (e) { toast('操作失败：' + e.message); }
+}
 
 // ================================================================ 工具
 function toast(msg) {
@@ -1820,7 +1837,9 @@ function questionDetailHTML(r, i, sessIdx) {
     <div class="q-detail-btns">
       ${r.question_id ? (() => {
         const on = state.userState.mastered.includes(r.question_id);
-        return `<button class="q-btn ${on ? 'on' : ''}" onclick="toggleMasteredQuick('${r.question_id}', this)"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span class="rv-btn-label">${on ? '已掌握' : '标记掌握'}</span></button>`;
+        const bm = state.userState.bookmarks.includes(r.question_id);
+        return `<button class="q-btn ${on ? 'on' : ''}" onclick="toggleMasteredQuick('${r.question_id}', this)"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span class="rv-btn-label">${on ? '已掌握' : '标记掌握'}</span></button>
+        <button class="q-btn ${bm ? 'on bookmark-on' : ''}" onclick="toggleBookmarkQuick('${r.question_id}', this)"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span class="rv-btn-label">${bm ? '已收藏' : '收藏'}</span></button>`;
       })() : ''}
       <button class="ghost" onclick="openReview(${i}, ${sessIdx === undefined ? -1 : sessIdx})"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>追问这题</button>
     </div>
@@ -2151,6 +2170,7 @@ function renderDetail(i, sessions) {
 function reviewCardHTML(q, origIdx, sessIdx) {
   const rc = q.score >= 80 ? 'var(--good)' : q.score >= 60 ? 'var(--warn)' : 'var(--bad)';
   const on = state.userState.mastered.includes(q.question_id);
+  const bm = state.userState.bookmarks.includes(q.question_id);
   const rows = [];
   if (q.key_points && q.key_points.length) rows.push(['kp', '采分点', q.key_points]);
   if (q.missed_points && q.missed_points.length) rows.push(['miss', '遗漏', q.missed_points]);
@@ -2185,7 +2205,8 @@ function reviewCardHTML(q, origIdx, sessIdx) {
     <div class="rv-open">
       ${secs.join('')}
       <div class="rvcard-foot">
-        ${q.question_id ? `<button class="q-btn ${on ? 'on' : ''}" onclick="toggleMasteredQuick('${q.question_id}', this)"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span class="rv-btn-label">${on ? '已掌握' : '标记掌握'}</span></button>` : ''}
+        ${q.question_id ? `<button class="q-btn ${on ? 'on' : ''}" onclick="toggleMasteredQuick('${q.question_id}', this)"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg><span class="rv-btn-label">${on ? '已掌握' : '标记掌握'}</span></button>
+        <button class="q-btn ${bm ? 'on bookmark-on' : ''}" onclick="toggleBookmarkQuick('${q.question_id}', this)"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span class="rv-btn-label">${bm ? '已收藏' : '收藏'}</span></button>` : ''}
         <button class="ghost" onclick="openReview(${origIdx}, ${sessIdx})"><svg class="rv-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>追问这题</button>
       </div>
     </div>
